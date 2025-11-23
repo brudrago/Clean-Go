@@ -3,7 +3,9 @@ module github.com/brudrago/clean-go
 go 1.25.1
 
 require (
+	github.com/booscaaa/go-paginate v0.0.12
 	github.com/golang-migrate/migrate/v4 v4.19.0
+	github.com/gorilla/mux v1.8.1
 	github.com/jackc/pgconn v1.14.3
 	github.com/jackc/pgx/v4 v4.18.3
 	github.com/spf13/viper v1.21.0

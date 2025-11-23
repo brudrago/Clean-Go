@@ -3,28 +3,56 @@ package productRepository
 import (
 	"context"
 
+	"github.com/booscaaa/go-paginate/v3/paginate"
 	"github.com/brudrago/clean-go/core/domain"
 	"github.com/brudrago/clean-go/core/dto"
-	"github.com/brudrago/go-paginate/paginate"
 )
 
 func (repo repository) Fetch(pagination *dto.PaginationRequestParams) (*domain.Pagination[[]domain.Product], error) {
 	ctx := context.Background()
 	products := []domain.Product{}
-	total := int32(0)
+	var total int32
 
-	query, queryCount, err := paginate.Paginate("SELECT * FROM product").
-		Page(pagination.Page).
-		ItemsPerPage(pagination.ItemsPerPage).
-		Search(pagination.Search, []string{"name", "description"}).
-		Sort(pagination.Sort).
-		Descending(pagination.Descending).
-		Query()
+	// Builder base
+	builder := paginate.NewBuilder().
+		Table("product p").
+		Model(&domain.Product{}).
+		Page(int(pagination.Page)).
+		Limit(int(pagination.ItemsPerPage))
+
+	// Busca (search)
+	if pagination.Search != "" {
+		builder = builder.Search(pagination.Search, "name", "description")
+	}
+
+	// Sort (primeiro campo da lista)
+	if len(pagination.Sort) > 0 {
+		sortField := pagination.Sort[0]
+
+		// Se houver qualquer coisa em Descending, vamos considerar que é descendente
+		isDescending := len(pagination.Descending) > 0
+
+		if isDescending {
+			builder = builder.OrderByDesc(sortField)
+		} else {
+			builder = builder.OrderBy(sortField)
+		}
+	}
+
+	// SQL da listagem
+	query, args, err := builder.BuildSQL()
 	if err != nil {
 		return nil, err
 	}
 
-	rows, err := repo.db.Query(ctx, query)
+	// SQL do COUNT
+	countQuery, countArgs, err := builder.BuildCountSQL()
+	if err != nil {
+		return nil, err
+	}
+
+	// Busca paginada
+	rows, err := repo.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -32,20 +60,23 @@ func (repo repository) Fetch(pagination *dto.PaginationRequestParams) (*domain.P
 
 	for rows.Next() {
 		product := domain.Product{}
-		err := rows.Scan(
+		if err := rows.Scan(
 			&product.ID,
 			&product.Name,
 			&product.Price,
 			&product.Description,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 		products = append(products, product)
 	}
 
-	err = repo.db.QueryRow(ctx, queryCount).Scan(&total)
-	if err != nil {
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// COUNT total
+	if err := repo.db.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 		return nil, err
 	}
 
